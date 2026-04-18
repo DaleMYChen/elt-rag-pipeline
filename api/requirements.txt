@@ -1,0 +1,14 @@
+# API layer dependencies — pinned for reproducible Cloud Run builds.
+#
+# To update: change version numbers here, rebuild the Docker image, test,
+# then commit. Do not use `pip install --upgrade` in CI without updating
+# these pins first.
+
+# Web framework + ASGI server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0   # [standard] includes uvloop (faster event loop on Linux)
+pydantic==2.10.4
+snowflake-snowpark-python==1.26.0   # includes the connector; Snowpark Session replaces raw conn
+snowflake-core==1.6.0               # provides Root() → Cortex Search SDK
+pandas==2.2.2                       # required by snowflake-snowpark-python (not auto-installed)
+

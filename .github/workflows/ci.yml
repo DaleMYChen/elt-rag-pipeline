@@ -1,0 +1,94 @@
+name: CI — dbt build and test (Pull Request)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      # Only run when dbt files change — skip if only README or Airflow DAG changed
+      - 'dbt/**'
+
+jobs:
+  dbt-ci:
+    name: dbt compile, build (slim CI), test
+    runs-on: ubuntu-latest
+
+    env:
+      # Snowflake credentials injected from GitHub repository secrets
+      SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Install dbt ───────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dbt-snowflake
+        run: pip install dbt-snowflake
+
+      - name: Install dbt packages (dbt_utils)
+        working-directory: dbt
+        run: dbt deps --profiles-dir .
+
+      # ── Step 1: Compile ───────────────────────────────────────────────────
+      # Validates all SQL syntax and ref() / source() dependencies.
+      # Fast — no database connection required.
+      - name: dbt compile
+        working-directory: dbt
+        run: dbt compile --profiles-dir . --target ci
+
+      # ── Step 2: Download previous production manifest for slim CI ─────────
+      # The manifest.json from the last CD run is stored as a GitHub Actions
+      # artefact. dbt uses it to identify which models changed in this PR.
+      # On the very first run (no artefact exists yet), this step is skipped
+      # and the next step falls back to a full build.
+      - name: Download production manifest (slim CI baseline)
+        uses: actions/download-artifact@v4
+        with:
+          name: dbt-manifest-prod
+          path: dbt/prod-manifest/
+        continue-on-error: true   # first run: no manifest exists yet, that's fine
+
+      # ── Step 3: Slim CI build ─────────────────────────────────────────────
+      # Rebuilds only models changed in this PR and their downstream dependents.
+      # Writes to STAGING_CI and MARTS_CI — never touches production schemas.
+      #
+      # --select state:modified+  = changed models + all downstream dependents
+      # --state prod-manifest/    = the baseline manifest to compare against
+      # --defer                   = for unchanged upstream models, read from prod
+      #                             instead of rebuilding them from scratch
+      #
+      # Falls back to full build if no manifest exists (first CI run).
+      - name: dbt build — slim CI (modified models only)
+        working-directory: dbt
+        run: |
+          if [ -f prod-manifest/manifest.json ]; then
+            echo "Manifest found — running slim CI"
+            dbt build \
+              --profiles-dir . \
+              --target ci \
+              --select state:modified+ \
+              --defer \
+              --state prod-manifest/
+          else
+            echo "No manifest found — running full build (first CI run)"
+            dbt build --profiles-dir . --target ci
+          fi
+
+      # ── Step 4: Test ──────────────────────────────────────────────────────
+      # Runs all schema tests against the CI schemas.
+      # This step is redundant if dbt build already ran tests (it does),
+      # but kept explicit for clarity in the Actions log.
+      - name: dbt test
+        working-directory: dbt
+        run: dbt test --profiles-dir . --target ci

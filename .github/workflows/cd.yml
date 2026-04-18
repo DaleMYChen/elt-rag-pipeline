@@ -1,0 +1,59 @@
+name: CD — dbt deploy to production (merge to main)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Mirror the CI path filter — only deploy when dbt files actually changed
+      - 'dbt/**'
+
+jobs:
+  dbt-deploy:
+    name: dbt build and test (production)
+    runs-on: ubuntu-latest
+
+    env:
+      SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dbt-snowflake
+        run: pip install dbt-snowflake
+
+      - name: Install dbt packages (dbt_utils)
+        working-directory: dbt
+        run: dbt deps --profiles-dir .
+
+      # ── Deploy to production ──────────────────────────────────────────────
+      # Full build — runs all models and tests against STAGING and MARTS.
+      # dbt build = dbt run + dbt test in a single command.
+      # If any test fails, the step fails and the deployment is marked failed.
+      - name: dbt build — production
+        working-directory: dbt
+        run: dbt build --profiles-dir . --target prod
+
+      # ── Save manifest for slim CI ─────────────────────────────────────────
+      # The manifest.json records the exact state of every model after this
+      # deployment. The CI workflow downloads it to determine which models
+      # have changed in the next PR. Without this, slim CI cannot function.
+      - name: Upload production manifest as artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-manifest-prod
+          path: dbt/target/manifest.json
+          # Keep the manifest for 90 days — long enough to cover any PR lifecycle
+          retention-days: 90
