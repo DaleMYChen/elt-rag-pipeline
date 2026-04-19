@@ -1,0 +1,39 @@
+name: CI — API Docker build
+
+# ── When this runs ────────────────────────────────────────────────────────────
+# Any push to any branch, OR a pull request targeting main.
+# Path filter: only fires when api/ files actually change — a dbt-only commit
+# does not trigger a Docker build, and vice versa.
+on:
+  push:
+    paths:
+      - 'api/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'api/**'
+
+jobs:
+  build:
+    name: Build and validate Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Build the image exactly as production would — same Dockerfile, same
+      # requirements.txt. If pip install fails, a dependency is broken.
+      # The image is tagged :ci and discarded after the job; it is never pushed.
+      - name: Build Docker image
+        run: docker build -t books-rag-api:ci ./api
+
+      # Validate that all Python imports resolve inside the built image.
+      # The FastAPI lifespan (Snowflake connection) only runs when uvicorn
+      # starts, not on import — so this check works without any credentials.
+      # Catches: missing packages, typos in import paths, syntax errors.
+      - name: Validate Python imports
+        run: |
+          docker run --rm books-rag-api:ci \
+            python -c "import main; import retriever; import llm; print('All imports OK')"

@@ -17,5 +17,5 @@ dbt/logs/
 # macOS
 .DS_Store
 
-# Snowflake
-BooksWH.sql
+# keys
+gha-key.json

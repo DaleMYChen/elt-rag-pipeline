@@ -1,0 +1,79 @@
+name: CD — API deploy to Cloud Run
+
+# ── When this runs ────────────────────────────────────────────────────────────
+# Only on pushes to main that touch api/ files.
+# CI (api-ci.yml) already validated the image on the PR; this job only runs
+# after that PR is merged, so we skip re-running the build check here.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/**'
+
+env:
+  REGION: australia-southeast1
+  SERVICE: books-rag-api
+  # Full image path: registry/project/repository/image-name
+  # GCP_PROJECT_ID is stored as a repository variable (Settings → Variables),
+  # not a secret, because project IDs are not sensitive.
+  IMAGE: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/books-rag-api/api
+
+jobs:
+  deploy:
+    name: Build, push, and deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Exchange the service-account JSON key for short-lived GCP credentials.
+      # GCP_SA_KEY must contain the full JSON key downloaded from IAM & Admin.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Configures Docker's credential helper so that subsequent docker push
+      # commands are accepted by Artifact Registry without a separate login step.
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Tag with the commit SHA so every deployed revision is traceable back to
+      # the exact commit — never overwrite :latest in production.
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE }}:${{ github.sha }} ./api
+
+      - name: Push Docker image to Artifact Registry
+        run: docker push ${{ env.IMAGE }}:${{ github.sha }}
+
+      # Deploy the new revision. Cloud Run performs a rolling update:
+      # the old revision keeps serving traffic until the new one passes its
+      # health check, so there is no downtime.
+      #
+      # --memory 2Gi     — snowflake-snowpark-python needs ~1.5 GB at startup
+      # --allow-unauthenticated — public API; lock down with a gateway if needed
+      # --set-env-vars   — Snowflake credentials injected at runtime, never baked
+      #                    into the image. SNOWFLAKE_DATABASE is hardcoded as
+      #                    BOOKS_WAREHOUSE in main.py so it is not a secret here.
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image ${{ env.IMAGE }}:${{ github.sha }} \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --memory 2Gi \
+            --allow-unauthenticated \
+            --set-env-vars "\
+          SNOWFLAKE_ACCOUNT=${{ secrets.SNOWFLAKE_ACCOUNT }},\
+          SNOWFLAKE_USER=${{ secrets.SNOWFLAKE_USER }},\
+          SNOWFLAKE_PASSWORD=${{ secrets.SNOWFLAKE_PASSWORD }},\
+          SNOWFLAKE_ROLE=${{ secrets.SNOWFLAKE_ROLE }},\
+          SNOWFLAKE_WAREHOUSE=${{ secrets.SNOWFLAKE_WAREHOUSE }}"
+
+      - name: Print deployed service URL
+        run: |
+          gcloud run services describe ${{ env.SERVICE }} \
+            --region ${{ env.REGION }} \
+            --format "value(status.url)"
