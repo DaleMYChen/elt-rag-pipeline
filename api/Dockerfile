@@ -25,7 +25,7 @@ COPY . .
 # ── Port ──────────────────────────────────────────────────────────────────────
 # Cloud Run injects a PORT environment variable (default 8080).
 # EXPOSE is documentation only — it does not publish the port.
-# The CMD below reads $PORT at runtime.
+# The CMD below reads $PORT at runtime
 ENV PORT=8080
 EXPOSE 8080
 
