@@ -10,6 +10,7 @@ on:
       - main
     paths:
       - 'api/**'
+      - '.github/workflows/api-cd.yml'
 
 env:
   REGION: australia-southeast1
