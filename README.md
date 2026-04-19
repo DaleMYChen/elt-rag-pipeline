@@ -186,7 +186,9 @@ curl -X POST https://books-rag-api-110245679001.australia-southeast1.run.app/ask
   "books": [
     {"book_title": "The Cuckoo's Calling (Cormoran Strike #1)", "category_name": "Mystery", "price_gbp": 19.21, "rating_stars": 1, "description": "..."},
     {"book_title": "The Murder of Roger Ackroyd (Hercule Poirot #4)", "category_name": "Mystery", "price_gbp": 44.1, "rating_stars": 4, "description": "..."},
-    {"book_title": "Tastes Like Fear (DI Marnie Rome #3)", "category_name": "Mystery", "price_gbp": 10.69, "rating_stars": 1, "description": "..."}
+    {"book_title": "Tastes Like Fear (DI Marnie Rome #3)", "category_name": "Mystery", "price_gbp": 10.69, "rating_stars": 1, "description": "..."},
+    {"book_title":{"..."}},
+    {"book_title":{"..."}}
   ]
 }
 ```
