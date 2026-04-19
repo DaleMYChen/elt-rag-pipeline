@@ -17,7 +17,7 @@ env:
   # Full image path: registry/project/repository/image-name
   # GCP_PROJECT_ID is stored as a repository variable (Settings → Variables),
   # not a secret, because project IDs are not sensitive.
-  IMAGE: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/books-rag-api/api
+  IMAGE: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/elt-rag-pipeline/api
 
 jobs:
   deploy:
